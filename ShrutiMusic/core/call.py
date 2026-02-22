@@ -5,7 +5,7 @@
 #
 # This code is the intellectual property of Nand Yaduwanshi.
 # System Upgraded (2026): PyTgCalls Modern Native Architecture
-# Features: Zero Latency FFmpeg, StreamEnded Handler, Direct API Integration
+# Features: Zero Latency FFmpeg, StreamEnded Handler, Direct API Integration, Full Legacy Bridge
 
 import asyncio
 import os
@@ -60,7 +60,7 @@ def _build_stream(path: str, video: bool = False, ffmpeg_opts: str = "") -> Medi
     path = str(path)
     is_url = path.startswith("http")
     
-    # 🚀 سرعة التشغيل اللحظية: إلغاء الـ Buffering وتقليل الـ Probesize
+    # سرعة التشغيل اللحظية: إلغاء الـ Buffering وتقليل الـ Probesize
     base_flags = (
         "-threads 2 "
         "-probesize 1024 -analyzeduration 0 " 
@@ -121,6 +121,7 @@ class Call:
     async def ping(self) -> str:
         return "PONG"
 
+    # [التصحيح 1] كباري التحكم الأساسية
     async def pause_stream(self, chat_id: int) -> None:
         assistant = await group_assistant(self, chat_id)
         await assistant.pause(chat_id)
@@ -137,6 +138,7 @@ class Call:
         assistant = await group_assistant(self, chat_id)
         await assistant.unmute(chat_id)
 
+    # [التصحيح 2] دوال الخروج الموحدة للماستر
     async def stop_stream(self, chat_id: int) -> None:
         assistant = await group_assistant(self, chat_id)
         await _clear_(chat_id)
@@ -162,26 +164,32 @@ class Call:
         finally:
             self.active_calls.discard(chat_id)
 
+    # [التصحيح 3] اسم الدالة البديل لحل مشكلة watcher.py و reload.py
+    async def stop_stream_force(self, chat_id: int) -> None:
+        await self.force_stop_stream(chat_id)
+
+    # [التصحيح 4] تصحيح دالة تغيير الصوت بناءً على الفحص
     async def change_volume_call(self, chat_id: int, volume: int) -> None:
         assistant = await group_assistant(self, chat_id)
         try:
-            await assistant.change_volume_call(chat_id, volume)
+            await assistant.change_volume(chat_id, volume)
         except Exception as e:
             LOGGER(__name__).error(f"Failed to change volume for {chat_id}: {e}")
 
-    async def seek_stream(self, chat_id: int, file_path: str, to_seek: int, duration: int, mode: str) -> None:
+    # [التصحيح 5] استخدام **kwargs لامتصاص أي بارامترات قديمة (مثل image)
+    async def seek_stream(self, chat_id: int, file_path: str, to_seek: int, duration: int, mode: str, **kwargs) -> None:
         assistant = await group_assistant(self, chat_id)
         ffmpeg_opts = f"-ss {to_seek} "
         is_video = (mode == "video")
         stream = _build_stream(file_path, video=is_video, ffmpeg_opts=ffmpeg_opts)
         await assistant.play(chat_id, stream)
 
-    async def skip_stream(self, chat_id: int, link: str, video: bool = False) -> None:
+    async def skip_stream(self, chat_id: int, link: str, video: bool = False, **kwargs) -> None:
         assistant = await group_assistant(self, chat_id)
         stream = _build_stream(link, video=video)
         await assistant.play(chat_id, stream)
 
-    async def join_call(self, chat_id: int, original_chat_id: int, link: str, video: bool = False, image: str = None) -> None:
+    async def join_call(self, chat_id: int, original_chat_id: int, link: str, video: bool = False, **kwargs) -> None:
         assistant = await group_assistant(self, chat_id)
         stream = _build_stream(link, video=video)
 
@@ -277,7 +285,7 @@ class Call:
         is_video = str(streamtype) == "video"
         final_link = queued
         
-        # 🚀 الاتصال بمحرك يوتيوب الصاروخي لجلب رابط البث فوراً
+        # الاتصال بمحرك يوتيوب الصاروخي لجلب رابط البث فوراً
         if "youtube" in str(queued) or "googleusercontent" in str(queued):
              try:
                 direct = await YouTube.get_direct_link(f"https://youtube.com/watch?v={videoid}", prefer_audio=not is_video)
