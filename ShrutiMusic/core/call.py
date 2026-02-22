@@ -74,12 +74,18 @@ def _build_stream(path: str, video: bool = False, ffmpeg_opts: str = "") -> Medi
 
     final_ffmpeg = base_flags + ffmpeg_opts
 
-    return MediaStream(
-        media_path=path,
-        audio_parameters=AudioQuality.HIGH, 
-        video_parameters=VideoQuality.HD_720p if video else None, 
-        ffmpeg_parameters=final_ffmpeg,
-    )
+    # 🚀 الحل الذكي: بناء القاموس وتجنب إرسال None للفيديو
+    stream_params = {
+        "media_path": path,
+        "audio_parameters": AudioQuality.HIGH,
+        "ffmpeg_parameters": final_ffmpeg
+    }
+    
+    # إضافة بارامترات الفيديو فقط إذا كان التشغيل فيديو (لتجنب TypeError: NoneType)
+    if video:
+        stream_params["video_parameters"] = VideoQuality.HD_720p
+
+    return MediaStream(**stream_params)
 
 async def _clear_(chat_id: int) -> None:
     try:
@@ -121,7 +127,7 @@ class Call:
     async def ping(self) -> str:
         return "PONG"
 
-    # [التصحيح 1] كباري التحكم الأساسية
+    # كباري التحكم الأساسية
     async def pause_stream(self, chat_id: int) -> None:
         assistant = await group_assistant(self, chat_id)
         await assistant.pause(chat_id)
@@ -138,7 +144,7 @@ class Call:
         assistant = await group_assistant(self, chat_id)
         await assistant.unmute(chat_id)
 
-    # [التصحيح 2] دوال الخروج الموحدة للماستر
+    # دوال الخروج
     async def stop_stream(self, chat_id: int) -> None:
         assistant = await group_assistant(self, chat_id)
         await _clear_(chat_id)
@@ -164,11 +170,10 @@ class Call:
         finally:
             self.active_calls.discard(chat_id)
 
-    # [التصحيح 3] اسم الدالة البديل لحل مشكلة watcher.py و reload.py
+    # اسم الدالة البديل لحل مشكلة watcher.py و reload.py
     async def stop_stream_force(self, chat_id: int) -> None:
         await self.force_stop_stream(chat_id)
 
-    # [التصحيح 4] تصحيح دالة تغيير الصوت بناءً على الفحص
     async def change_volume_call(self, chat_id: int, volume: int) -> None:
         assistant = await group_assistant(self, chat_id)
         try:
@@ -176,7 +181,7 @@ class Call:
         except Exception as e:
             LOGGER(__name__).error(f"Failed to change volume for {chat_id}: {e}")
 
-    # [التصحيح 5] استخدام **kwargs لامتصاص أي بارامترات قديمة (مثل image)
+    # دوال التشغيل مع **kwargs لامتصاص البارامترات القديمة
     async def seek_stream(self, chat_id: int, file_path: str, to_seek: int, duration: int, mode: str, **kwargs) -> None:
         assistant = await group_assistant(self, chat_id)
         ffmpeg_opts = f"-ss {to_seek} "
@@ -294,6 +299,7 @@ class Call:
              except Exception as e: 
                 LOGGER(__name__).error(f"Queue Play API Fetch Error: {e}")
 
+        # بناء الاستريم بالطريقة المصلحة
         stream = _build_stream(final_link, video=is_video)
 
         try:
