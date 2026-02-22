@@ -4,30 +4,17 @@
 # All rights reserved.
 #
 # This code is the intellectual property of Nand Yaduwanshi.
-# You are not allowed to copy, modify, redistribute, or use this
-# code for commercial or personal projects without explicit permission.
-#
-# Allowed:
-# - Forking for personal learning
-# - Submitting improvements via pull requests
-#
-# Not Allowed:
-# - Claiming this code as your own
-# - Re-uploading without credit or permission
-# - Selling or using commercially
-#
-# Contact for permissions:
-# Email: badboy809075@gmail.com
-
+# System Upgraded (2026): Modern Stream Logic, Safe Deletion, API Direct Link Support
 
 import os
+import asyncio
 from random import randint
 from typing import Union
 
 from pyrogram.types import InlineKeyboardMarkup
 
 import config
-from ShrutiMusic import Carbon, YouTube, app
+from ShrutiMusic import Carbon, YouTube, app, LOGGER
 from ShrutiMusic.core.call import Nand
 from ShrutiMusic.misc import db
 from ShrutiMusic.utils.database import add_active_video_chat, is_active_chat
@@ -37,6 +24,13 @@ from ShrutiMusic.utils.pastebin import NandBin
 from ShrutiMusic.utils.stream.queue import put_queue, put_queue_index
 from ShrutiMusic.utils.thumbnails import gen_thumb
 
+# 🚀 دالة الحذف الآمن لمنع كراش الـ FloodWait
+async def safe_delete(message):
+    try:
+        if message:
+            await message.delete()
+    except:
+        pass
 
 async def stream(
     _,
@@ -53,8 +47,13 @@ async def stream(
 ):
     if not result:
         return
+        
     if forceplay:
         await Nand.force_stop_stream(chat_id)
+
+    # ==========================
+    # 1. نظام قوائم التشغيل (Playlist)
+    # ==========================
     if streamtype == "playlist":
         msg = f"{_['play_19']}\n\n"
         count = 0
@@ -75,6 +74,7 @@ async def stream(
                 continue
             if duration_sec > config.DURATION_LIMIT:
                 continue
+                
             if await is_active_chat(chat_id):
                 await put_queue(
                     chat_id,
@@ -99,8 +99,10 @@ async def stream(
                     file_path, direct = await YouTube.download(
                         vidid, mystic, video=status, videoid=True
                     )
-                except:
+                except Exception as e:
+                    LOGGER(__name__).error(f"Playlist Download Error: {e}")
                     raise AssistantErr(_["play_14"])
+                    
                 await Nand.join_call(
                     chat_id,
                     original_chat_id,
@@ -122,6 +124,8 @@ async def stream(
                 )
                 img = await gen_thumb(vidid)
                 button = stream_markup(_, chat_id)
+                
+                await safe_delete(mystic)
                 run = await app.send_photo(
                     original_chat_id,
                     photo=img,
@@ -135,6 +139,7 @@ async def stream(
                 )
                 db[chat_id][0]["mystic"] = run
                 db[chat_id][0]["markup"] = "stream"
+                
         if count == 0:
             return
         else:
@@ -152,6 +157,10 @@ async def stream(
                 caption=_["play_21"].format(position, link),
                 reply_markup=upl,
             )
+
+    # ==========================
+    # 2. نظام تشغيل يوتيوب المنفرد
+    # ==========================
     elif streamtype == "youtube":
         link = result["link"]
         vidid = result["vidid"]
@@ -161,16 +170,16 @@ async def stream(
         status = True if video else None
     
         current_queue = db.get(chat_id)
-
-        
-        if current_queue is not None and len(current_queue) >= 10:
-            return await app.send_message(original_chat_id, "You can't add more than 10 songs to the queue.")
+        if current_queue is not None and len(current_queue) >= 100: # 🚀 تم رفع الليمت إلى 100 لراحة المستخدم
+            return await app.send_message(original_chat_id, "You can't add more than 100 songs to the queue.")
 
         try:
+            # 🚀 جلب الرابط السريع من الـ API
             file_path, direct = await YouTube.download(
                 vidid, mystic, videoid=True, video=status
             )
-        except:
+        except Exception as e:
+            LOGGER(__name__).error(f"YouTube Play Error: {e}")
             raise AssistantErr(_["play_14"])
 
         if await is_active_chat(chat_id):
@@ -187,6 +196,8 @@ async def stream(
             )
             position = len(db.get(chat_id)) - 1
             button = aq_markup(_, chat_id)
+            
+            await safe_delete(mystic)
             await app.send_message(
                 chat_id=original_chat_id,
                 text=_["queue_4"].format(position, title[:27], duration_min, user_name),
@@ -195,6 +206,8 @@ async def stream(
         else:
             if not forceplay:
                 db[chat_id] = []
+            
+            # الانضمام للمكالمة وتشغيل الرابط
             await Nand.join_call(
                 chat_id,
                 original_chat_id,
@@ -202,6 +215,7 @@ async def stream(
                 video=status,
                 image=thumbnail,
             )
+            
             await put_queue(
                 chat_id,
                 original_chat_id,
@@ -216,6 +230,8 @@ async def stream(
             )
             img = await gen_thumb(vidid)
             button = stream_markup(_, chat_id)
+            
+            await safe_delete(mystic)
             run = await app.send_photo(
                 original_chat_id,
                 photo=img,
@@ -229,10 +245,15 @@ async def stream(
             )
             db[chat_id][0]["mystic"] = run
             db[chat_id][0]["markup"] = "stream"
+
+    # ==========================
+    # 3. نظام ساوند كلاود
+    # ==========================
     elif streamtype == "soundcloud":
         file_path = result["filepath"]
         title = result["title"]
         duration_min = result["duration_min"]
+        
         if await is_active_chat(chat_id):
             await put_queue(
                 chat_id,
@@ -247,6 +268,7 @@ async def stream(
             )
             position = len(db.get(chat_id)) - 1
             button = aq_markup(_, chat_id)
+            await safe_delete(mystic)
             await app.send_message(
                 chat_id=original_chat_id,
                 text=_["queue_4"].format(position, title[:27], duration_min, user_name),
@@ -269,6 +291,7 @@ async def stream(
                 forceplay=forceplay,
             )
             button = stream_markup(_, chat_id)
+            await safe_delete(mystic)
             run = await app.send_photo(
                 original_chat_id,
                 photo=config.SOUNCLOUD_IMG_URL,
@@ -279,12 +302,17 @@ async def stream(
             )
             db[chat_id][0]["mystic"] = run
             db[chat_id][0]["markup"] = "tg"
+
+    # ==========================
+    # 4. ملفات تليجرام المباشرة
+    # ==========================
     elif streamtype == "telegram":
         file_path = result["path"]
         link = result["link"]
         title = (result["title"]).title()
         duration_min = result["dur"]
         status = True if video else None
+        
         if await is_active_chat(chat_id):
             await put_queue(
                 chat_id,
@@ -299,6 +327,7 @@ async def stream(
             )
             position = len(db.get(chat_id)) - 1
             button = aq_markup(_, chat_id)
+            await safe_delete(mystic)
             await app.send_message(
                 chat_id=original_chat_id,
                 text=_["queue_4"].format(position, title[:27], duration_min, user_name),
@@ -323,6 +352,7 @@ async def stream(
             if video:
                 await add_active_video_chat(chat_id)
             button = stream_markup(_, chat_id)
+            await safe_delete(mystic)
             run = await app.send_photo(
                 original_chat_id,
                 photo=config.TELEGRAM_VIDEO_URL if video else config.TELEGRAM_AUDIO_URL,
@@ -331,6 +361,10 @@ async def stream(
             )
             db[chat_id][0]["mystic"] = run
             db[chat_id][0]["markup"] = "tg"
+
+    # ==========================
+    # 5. البث المباشر (Live)
+    # ==========================
     elif streamtype == "live":
         link = result["link"]
         vidid = result["vidid"]
@@ -338,6 +372,7 @@ async def stream(
         thumbnail = result["thumb"]
         duration_min = "Live Track"
         status = True if video else None
+        
         if await is_active_chat(chat_id):
             await put_queue(
                 chat_id,
@@ -352,6 +387,7 @@ async def stream(
             )
             position = len(db.get(chat_id)) - 1
             button = aq_markup(_, chat_id)
+            await safe_delete(mystic)
             await app.send_message(
                 chat_id=original_chat_id,
                 text=_["queue_4"].format(position, title[:27], duration_min, user_name),
@@ -363,6 +399,7 @@ async def stream(
             n, file_path = await YouTube.video(link)
             if n == 0:
                 raise AssistantErr(_["str_3"])
+                
             await Nand.join_call(
                 chat_id,
                 original_chat_id,
@@ -384,6 +421,7 @@ async def stream(
             )
             img = await gen_thumb(vidid)
             button = stream_markup(_, chat_id)
+            await safe_delete(mystic)
             run = await app.send_photo(
                 original_chat_id,
                 photo=img,
@@ -397,10 +435,15 @@ async def stream(
             )
             db[chat_id][0]["mystic"] = run
             db[chat_id][0]["markup"] = "tg"
+
+    # ==========================
+    # 6. روابط خارجية (Index / M3U8)
+    # ==========================
     elif streamtype == "index":
         link = result
         title = "ɪɴᴅᴇx ᴏʀ ᴍ3ᴜ8 ʟɪɴᴋ"
         duration_min = "00:00"
+        
         if await is_active_chat(chat_id):
             await put_queue_index(
                 chat_id,
@@ -414,10 +457,14 @@ async def stream(
             )
             position = len(db.get(chat_id)) - 1
             button = aq_markup(_, chat_id)
-            await mystic.edit_text(
-                text=_["queue_4"].format(position, title[:27], duration_min, user_name),
-                reply_markup=InlineKeyboardMarkup(button),
-            )
+            
+            try:
+                await mystic.edit_text(
+                    text=_["queue_4"].format(position, title[:27], duration_min, user_name),
+                    reply_markup=InlineKeyboardMarkup(button),
+                )
+            except:
+                pass
         else:
             if not forceplay:
                 db[chat_id] = []
@@ -439,6 +486,7 @@ async def stream(
                 forceplay=forceplay,
             )
             button = stream_markup(_, chat_id)
+            await safe_delete(mystic)
             run = await app.send_photo(
                 original_chat_id,
                 photo=config.STREAM_IMG_URL,
@@ -447,7 +495,6 @@ async def stream(
             )
             db[chat_id][0]["mystic"] = run
             db[chat_id][0]["markup"] = "tg"
-            await mystic.delete()
 
 
 # ©️ Copyright Reserved - @NoxxOP  Nand Yaduwanshi
@@ -457,6 +504,3 @@ async def stream(
 # 🔗 GitHub : https://github.com/NoxxOP/ShrutiMusic
 # 📢 Telegram Channel : https://t.me/ShrutiBots
 # ===========================================
-
-
-# ❤️ Love From ShrutiBots 
